@@ -1,7 +1,7 @@
 # 默认音量 50%
 volume=50
 # 软解
-hwdec=d3d11va
+hwdec=no
 
 # 高优先级
 priority=high
@@ -32,7 +32,7 @@ profile=gpu-hq
 #gpu-api=d3d11
 #----------------------------------------
 ### 或使用vulkan
-gpu-api=d3d11
+gpu-api=vulkan
 #----------------------------------------
 ### 或使用opengl
 # gpu-api=opengl
@@ -100,7 +100,7 @@ ontop # combined with fullscreen, likely to enter fullscreen exclusive mode
 # 其他系统请相应更改音频输出方式
 ao=wasapi
 # 独占音频。不希望其他程序没声音则去掉。
-# audio-exclusive=yes
+audio-exclusive=yes
 #audio-delay=0.04 # 如需要，可设置音频延迟
 # 强制resample成96kHz，24bit（需要音频设备硬件支持）。注意！并非必要！
 #audio-samplerate=96000
@@ -135,18 +135,62 @@ screenshot-high-bit-depth=yes
 #screenshot-png-compression=0
 #screenshot-png-filter=0
 
+# 根据视频是否是HDR以及视频aspect ratio决定是否启用blend-subtitles的profile
+# 目前HDR->SDR建议关闭blend-subtitles，见https://github.com/mpv-player/mpv/issues/6368
+# 如果hdr-compute-peak将来继续改进可能可以兼容blend-subtitles
+[HDR_or_21:9]
+profile-desc=cond:(p["video-params/primaries"]=="bt.2020" or p["video-params/aspect"]>=2.0)
+blend-subtitles=no
+sub-ass-force-margins=yes # 使字幕输出在黑边上
+
+[SDR_and_16:9]
+profile-desc=cond:(p["video-params/primaries"]~="bt.2020" and p["video-params/aspect"]<2.0)
+blend-subtitles=yes
+sub-ass-force-margins=no
+glsl-shaders="~~/shaders/Anime4K_Adaptive.glsl"
+
 # 以下根据分辨率和视频帧率设置不同的升/降阶算法，以期获得在能不掉帧的情况下达到最好的效果
+
 # 创建一个基于gpu-hq，用于将一些参数回归到默认的profile：
 [high_quality]
 profile=gpu-hq
+fbo-format=rgba32f  # 32位浮点数高精度处理
 # 默认自动判断解码用线程数
 vd-lavc-threads=6
 
-[HD60] # 640p 720p
-profile-desc=cond:((p["video-params/w"]<1358 and p["video-params/h"]<764) and (p["video-params/w"]>=1080 or p["video-params/h"]>=608))
+# 1080 * 1.414213 / 4 = 381.8
+[low] # 240p 360p，启用两次倍增以达到4倍.
+profile-desc=cond:(p["video-params/w"]<=678 and p["video-params/h"]<=381)
+profile=high_quality  # 调用之前定义的profile，相当于把那三行直接写在这里。可以用 profile=profile_A,profile_B 来调用多个profile，但要注意后者可能有覆盖前者的地方。此处作用为重新将gpu-hq会影响的几个参数设定为gpu-hq的默认值
+glsl-shaders-clr
+glsl-shaders-append="~~/shaders/KrigBilateral.glsl"
+glsl-shaders-append="~~/shaders/nnedi3-nns32-win8x4.hook"
+glsl-shaders-append="~~/shaders/nnedi3-nns32-win8x4.hook"
+
+# 1080 / 16 * 9 = 607.5
+[SD] # 480p 576p
+profile-desc=cond:((p["video-params/w"]<1080 and p["video-params/h"]<608) and (p["video-params/w"]>678 or p["video-params/h"]>381))
 profile=high_quality
 glsl-shaders-clr
-glsl-shaders="~~/shaders/Anime4K_Upscale_CNN_L_x2_Denoise.glsl;~~/shaders/Anime4K_Auto_Downscale_Pre_x4.glsl;~~/shaders/Anime4K_DarkLines_HQ.glsl;~~/shaders/Anime4K_ThinLines_HQ.glsl;~~/shaders/Anime4K_Upscale_CNN_UL_x2_Deblur.glsl"
+glsl-shaders-append="~~/shaders/KrigBilateral.glsl"
+glsl-shaders-append="~~/shaders/nnedi3-nns64-win8x4.hook"
+
+# 1080 * 1.414213 / 2 = 763.7
+[HD30] # 640p 720p 30fps
+profile-desc=cond:((p["video-params/w"]<1358 and p["video-params/h"]<764) and (p["video-params/w"]>=1080 or p["video-params/h"]>=608) and p["estimated-vf-fps"]<31)
+profile=high_quality
+glsl-shaders-clr
+glsl-shaders-append="~~/shaders/KrigBilateral.glsl"
+glsl-shaders-append="~~/shaders/nnedi3-nns32-win8x4.hook"
+
+[HD60] # 640p 720p 60fps
+profile-desc=cond:((p["video-params/w"]<1358 and p["video-params/h"]<764) and (p["video-params/w"]>=1080 or p["video-params/h"]>=608) and p["estimated-vf-fps"]>=31)
+profile=high_quality
+glsl-shaders-clr
+glsl-shaders-append="~~/shaders/KrigBilateral.glsl"
+scale=ewa_lanczossharp
+glsl-shaders-append="~~/shaders/SSimSuperRes.glsl" # 起antiring的作用，效果比之前的antiring shader好很多
+sigmoid-upscaling=no # SSimSuperRes推荐关闭sigmoid-upscaling。所以在其他不用SSSR的profile中都要重新设为yes（通过重新设定一遍profile=gpu-hq）。
 
 [KrigBilateral] # 另一个profile的例子
 profile=high_quality
@@ -155,9 +199,8 @@ glsl-shaders-append="~~/shaders/KrigBilateral.glsl"
 
 [FHD] # 1080p
 profile-desc=cond:((p["video-params/w"]<=1920 and p["video-params/h"]<=1080) and (p["video-params/w"]>=1358 or p["video-params/h"]>=764))
-profile=high_quality
-glsl-shaders-clr
-glsl-shaders="~~/shaders/Anime4K_Denoise_Bilateral_Mode.glsl;~~/shaders/Anime4K_DarkLines_HQ.glsl;~~/shaders/Anime4K_ThinLines_HQ.glsl;~~/shaders/Anime4K_Upscale_CNN_UL_x2_Deblur.glsl"
+# 调用之前定义的profile，减少代码重复
+profile=KrigBilateral
 
 [2K30] # 1440p
 profile-desc=cond:((p["video-params/w"]<=2560 and p["video-params/h"]<=1440) and (p["video-params/w"]>1920 or p["video-params/h"]>1080) and p["estimated-vf-fps"]<31)
@@ -170,3 +213,23 @@ profile=high_quality
 glsl-shaders-clr
 glsl-shaders-append="~~/shaders/SSimDownscaler.glsl"
 linear-downscaling=no # SSimDownscaler要求。需要在其他profile中重新设为yes（通过重新设定一遍profile=gpu-hq）。
+
+[UHD60] # high fps: use no glsl-shaders
+profile-desc=cond:((p["video-params/w"]>1920 or p["video-params/h"]>1080) and p["estimated-vf-fps"]>=31)
+glsl-shaders-clr
+# 如果是1080p屏幕播放4K，可以使用https://gist.github.com/bjin/15f307e7a1bdb55842bbb663ee1950ed
+# glsl-shaders-append="~~/shaders/acme-0.5x.hook"
+# 可以绕过chroma upscaling，并且把之后颜色转换的计算量从4K级降到1080p级。
+cscale=bilinear
+scale=bilinear
+dscale=bilinear
+# 关闭deband，降低计算量
+deband=no
+# 关闭抖动，降低计算量
+dither-depth=no
+# 降低计算量
+correct-downscaling=no
+fbo-format=auto # auto一般等于rgba16hf（d3d11，vulkan），或者rgba16f（opengl）。使用16位半精度浮点数，可能会比32位浮点数更快。
+# 默认自动判断解码用线程数
+vd-lavc-threads=6
+# 4K HEVC HDR 60fps软解压力很大，默认vd-lavc-threads=0自动识别逻辑核数，分配核数+1个线程，但往往不够，不能将CPU性能压榨到极限，强行分配更多线程数以提高软解性能。

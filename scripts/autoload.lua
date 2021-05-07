@@ -101,7 +101,7 @@ function find_and_add_entries()
     local pl_count = mp.get_property_number("playlist-count", 1)
     -- check if this is a manually made playlist
     if (pl_count > 1 and autoloaded == nil) or
-       (pl_count == 1 and EXTENSIONS[string.lower(get_extension(filename))] == nil) then
+        (pl_count == 1 and EXTENSIONS[string.lower(get_extension(filename))] == nil) then
         return
     else
         autoloaded = true
